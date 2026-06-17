@@ -1704,6 +1704,8 @@ func showDiffFallback(localPath, conflictPath string) {
 	localLines := strings.Split(string(localData), "\n")
 	conflictLines := strings.Split(string(conflictData), "\n")
 
+	// Cap output at 50 changed lines to keep the terminal readable for large
+	// session JSON files that may differ significantly.
 	const maxChangedLines = 50
 	shown := 0
 	maxLen := len(localLines)

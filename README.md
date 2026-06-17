@@ -519,6 +519,7 @@ permissions from the parent directory.
   `.exe` cannot be overwritten while open. The update command renames the old
   binary to a `.old` file first; restart the terminal after updating.
 
+## Development
 
 ```bash
 make test          # Run tests

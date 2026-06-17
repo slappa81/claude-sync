@@ -13,6 +13,11 @@ import (
 // control over a file object to the specified SID.
 const fileAllAccess = 0x1f01ff
 
+// protectedDACL is the PROTECTED_DACL_SECURITY_INFORMATION flag, which
+// prevents the DACL from inheriting entries from the parent directory so
+// that only the explicitly-granted SID entry takes effect.
+const protectedDACL = windows.SECURITY_INFORMATION(0x80000000)
+
 // SecureWriteFile writes data to path and then applies a DACL that grants
 // access only to the current user, removing inherited permissions.
 // The ACL restriction is best-effort: if it fails the file is still written
@@ -61,10 +66,6 @@ func restrictToCurrentUser(path string) error {
 	}
 
 	// Apply the new DACL.
-	// PROTECTED_DACL_SECURITY_INFORMATION (0x80000000) prevents the ACL from
-	// inheriting entries from the parent directory, ensuring only the explicit
-	// entry above takes effect.
-	const protectedDACL = windows.SECURITY_INFORMATION(0x80000000)
 	return windows.SetNamedSecurityInfo(
 		path,
 		windows.SE_FILE_OBJECT,

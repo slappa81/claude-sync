@@ -887,10 +887,13 @@ func runGCSWizard(projectID, credentialsFile, bucket string) (*storage.StorageCo
 			if path == "" {
 				return fmt.Errorf("credentials file path is required")
 			}
-			// Expand ~ in path
+			// Expand ~ in path; strip the separator that follows ~ so that
+			// filepath.Join works correctly on Windows (a leading "/" in the
+			// remainder would be treated as a drive-rooted path).
 			if len(path) > 0 && path[0] == '~' {
 				home, _ := os.UserHomeDir()
-				path = home + path[1:]
+				rest := strings.TrimLeft(path[1:], "/\\")
+				path = filepath.Join(home, rest)
 			}
 			if _, err := os.Stat(path); os.IsNotExist(err) {
 				return fmt.Errorf("file does not exist: %s", path)
@@ -1654,34 +1657,83 @@ func interactiveResolveConflicts(conflicts []conflictFile, claudeDir string, sta
 }
 
 func showDiff(localPath, conflictPath string) {
-	// Try to use diff command
-	cmd := exec.Command("diff", "-u", "--color=always", localPath, conflictPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
 	fmt.Println()
 	fmt.Printf("        %s--- Local%s\n", colorGreen, colorReset)
 	fmt.Printf("        %s+++ Remote (conflict)%s\n", colorCyan, colorReset)
 	fmt.Println()
 
-	if err := cmd.Run(); err != nil {
-		// diff returns exit code 1 when files differ, which is expected
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			// Files differ, this is normal
-		} else if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 2 {
-			// diff command failed
-			fmt.Printf("        %sCould not run diff command%s\n", colorDim, colorReset)
-
-			// Fall back to showing file sizes
-			localInfo, _ := os.Stat(localPath)
-			conflictInfo, _ := os.Stat(conflictPath)
-			if localInfo != nil && conflictInfo != nil {
-				fmt.Printf("        Local:  %s (%s)\n", localPath, util.FormatSize(localInfo.Size()))
-				fmt.Printf("        Remote: %s (%s)\n", conflictPath, util.FormatSize(conflictInfo.Size()))
+	if runtime.GOOS != "windows" {
+		// Use the system diff command on Unix/macOS.
+		cmd := exec.Command("diff", "-u", "--color=always", localPath, conflictPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+				// exit 1 means files differ — diff output was already written.
+			} else {
+				// diff not available or crashed; use the Go fallback.
+				showDiffFallback(localPath, conflictPath)
 			}
 		}
+		fmt.Println()
+		return
 	}
+
+	// Windows: diff is not available on a stock installation, so use the
+	// pure-Go fallback that requires no external tools.
+	showDiffFallback(localPath, conflictPath)
 	fmt.Println()
+}
+
+// showDiffFallback prints a simple line-by-line diff without relying on
+// external tools. It is used on Windows and as a fallback on other platforms
+// when the system diff command is unavailable or fails.
+func showDiffFallback(localPath, conflictPath string) {
+	localData, err1 := os.ReadFile(localPath)
+	conflictData, err2 := os.ReadFile(conflictPath)
+	if err1 != nil || err2 != nil {
+		localInfo, _ := os.Stat(localPath)
+		conflictInfo, _ := os.Stat(conflictPath)
+		if localInfo != nil && conflictInfo != nil {
+			fmt.Printf("        Local:  %s (%s)\n", filepath.Base(localPath), util.FormatSize(localInfo.Size()))
+			fmt.Printf("        Remote: %s (%s)\n", filepath.Base(conflictPath), util.FormatSize(conflictInfo.Size()))
+		}
+		return
+	}
+
+	localLines := strings.Split(string(localData), "\n")
+	conflictLines := strings.Split(string(conflictData), "\n")
+
+	// Cap output at 50 changed lines to keep the terminal readable for large
+	// session JSON files that may differ significantly.
+	const maxChangedLines = 50
+	shown := 0
+	maxLen := len(localLines)
+	if len(conflictLines) > maxLen {
+		maxLen = len(conflictLines)
+	}
+	for i := 0; i < maxLen; i++ {
+		if shown >= maxChangedLines {
+			fmt.Printf("        %s... (truncated after %d changed lines)%s\n", colorDim, maxChangedLines, colorReset)
+			break
+		}
+		var l, r string
+		if i < len(localLines) {
+			l = localLines[i]
+		}
+		if i < len(conflictLines) {
+			r = conflictLines[i]
+		}
+		if l != r {
+			if i < len(localLines) {
+				fmt.Printf("        %s-%s%s\n", colorGreen, l, colorReset)
+			}
+			if i < len(conflictLines) {
+				fmt.Printf("        %s+%s%s\n", colorCyan, r, colorReset)
+			}
+			shown++
+		}
+	}
 }
 
 func resetCmd() *cobra.Command {

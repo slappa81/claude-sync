@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/tawanorg/claude-sync/internal/storage"
+	"github.com/tawanorg/claude-sync/internal/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -134,6 +135,9 @@ func ClaudeDir() string {
 	if err != nil {
 		return ""
 	}
+	// os.UserHomeDir() is cross-platform: on Windows it returns %USERPROFILE%
+	// (e.g. C:\Users\alice), so filepath.Join correctly produces
+	// C:\Users\alice\.claude without any further OS-specific logic.
 	return filepath.Join(home, ".claude")
 }
 
@@ -162,19 +166,25 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	// Expand ~ in encryption key path
+	// Expand ~ in encryption key path.
+	// Strip the leading separator after ~ before joining so that filepath.Join
+	// works correctly on Windows: without this, "~/.claude-sync/key.txt"[1:]
+	// would be "/.claude-sync/key.txt" and filepath.Join would treat the
+	// leading "/" as a drive-rooted path on Windows.
 	if cfg.EncryptionKey != "" && cfg.EncryptionKey[0] == '~' {
 		home, _ := os.UserHomeDir()
-		cfg.EncryptionKey = filepath.Join(home, cfg.EncryptionKey[1:])
+		rest := strings.TrimLeft(cfg.EncryptionKey[1:], "/\\")
+		cfg.EncryptionKey = filepath.Join(home, rest)
 	}
 
-	// Expand ~ in path_map keys
+	// Expand ~ in path_map keys (same tilde-stripping fix as above).
 	if len(cfg.PathMap) > 0 {
 		home, _ := os.UserHomeDir()
 		expanded := make(map[string]string, len(cfg.PathMap))
 		for p, name := range cfg.PathMap {
 			if p != "" && p[0] == '~' {
-				p = filepath.Join(home, p[1:])
+				rest := strings.TrimLeft(p[1:], "/\\")
+				p = filepath.Join(home, rest)
 			}
 			expanded[p] = name
 		}
@@ -201,7 +211,7 @@ func Save(cfg *Config) error {
 	}
 
 	configPath := ConfigFilePath()
-	if err := os.WriteFile(configPath, data, 0600); err != nil {
+	if err := util.SecureWriteFile(configPath, data); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -242,6 +252,10 @@ func (c *Config) IsLegacyConfig() bool {
 //   - Directory prefix (e.g. "plugins/marketplace" matches everything under it)
 //   - Recursive wildcard (e.g. "plugins/cache/**" matches directory and all contents)
 //   - Filename glob (e.g. "*.tmp" matches "foo/bar/file.tmp")
+//
+// relPath is always forward-slash normalised (via filepath.ToSlash) before it
+// reaches this function — see state.go GetLocalFiles. Pattern strings in the
+// config must therefore also use forward slashes.
 func (c *Config) IsExcluded(relPath string) bool {
 	for _, pattern := range c.Exclude {
 		// Handle "dir/**" pattern: match directory and everything under it

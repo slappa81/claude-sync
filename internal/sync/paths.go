@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -48,8 +49,11 @@ func NewPathMapper(homeDir string, userMap map[string]string) (*PathMapper, erro
 	m := &PathMapper{}
 
 	add := func(name, localPath string) error {
-		localPath = strings.TrimRight(localPath, "/")
-		if localPath == "" {
+		// Normalize to forward slashes so the regex matches paths stored in
+		// Claude Code's JSON session files, which always use "/" regardless of
+		// OS. This also strips a trailing separator on all platforms.
+		localPath = filepath.ToSlash(filepath.Clean(localPath))
+		if localPath == "" || localPath == "." {
 			return nil
 		}
 		if !pathTokenNameRe.MatchString(name) {
@@ -196,6 +200,10 @@ func (m *PathMapper) ResolveContent(data []byte) []byte {
 // IsPortableContentPath reports whether content path translation applies to
 // this relative path: text formats under projects/ plus the prompt history.
 // Conflict copies (path.conflict.<timestamp>) inherit the base path's rule.
+//
+// Note: this function intentionally uses the "path" package (not
+// "path/filepath") because relPath is always a forward-slash remote storage
+// key by the time it is passed here, never a native OS path.
 func IsPortableContentPath(relPath string) bool {
 	if i := strings.Index(relPath, ".conflict."); i >= 0 {
 		relPath = relPath[:i]

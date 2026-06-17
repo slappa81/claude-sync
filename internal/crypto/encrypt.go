@@ -12,6 +12,8 @@ import (
 	"github.com/btcsuite/btcd/btcutil/bech32"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/curve25519"
+
+	"github.com/tawanorg/claude-sync/internal/util"
 )
 
 type Encryptor struct {
@@ -80,7 +82,7 @@ func GenerateKey(keyPath string) error {
 		return fmt.Errorf("failed to generate age key: %w", err)
 	}
 
-	if err := os.WriteFile(keyPath, []byte(identity.String()+"\n"), 0600); err != nil {
+	if err := util.SecureWriteFile(keyPath, []byte(identity.String()+"\n")); err != nil {
 		return fmt.Errorf("failed to write age key: %w", err)
 	}
 
@@ -112,7 +114,7 @@ func GenerateKeyFromPassphrase(keyPath, passphrase string) error {
 	// Encode as age identity string (Bech32 with AGE-SECRET-KEY- prefix)
 	identityStr := encodeAgeIdentity(privateKey[:])
 
-	if err := os.WriteFile(keyPath, []byte(identityStr+"\n"), 0600); err != nil {
+	if err := util.SecureWriteFile(keyPath, []byte(identityStr+"\n")); err != nil {
 		return fmt.Errorf("failed to write age key: %w", err)
 	}
 

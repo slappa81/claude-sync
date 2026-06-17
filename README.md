@@ -385,7 +385,7 @@ claude-sync push             # Re-upload from this device
 - Passphrase-derived keys use Argon2 (memory-hard KDF)
 - Passphrase is never stored - only the derived key at `~/.claude-sync/age-key.txt`
 - Cloud storage is private (API key/IAM auth)
-- Config files and downloads stored with 0600/0700 permissions (user-only)
+- Config files and downloads stored with 0600/0700 permissions (user-only); on Windows a DACL grants access only to the current user's SID
 - Self-update verifies SHA256 checksums before installing new binaries
 - Backward compatible: can read both compressed and uncompressed remote files
 
@@ -457,6 +457,67 @@ cd claude-sync
 make build
 ./bin/claude-sync --version
 ```
+
+## Windows
+
+claude-sync is fully supported on Windows (x64 and ARM64). The npm package
+automatically selects the correct pre-built binary, so installation is
+identical to macOS and Linux:
+
+```powershell
+npm install -g @tawandotorg/claude-sync
+claude-sync init
+claude-sync push
+```
+
+### File locations on Windows
+
+| Item | Path |
+|------|------|
+| Claude Code data | `%USERPROFILE%\.claude\` |
+| claude-sync config | `%USERPROFILE%\.claude-sync\config.yaml` |
+| Encryption key | `%USERPROFILE%\.claude-sync\age-key.txt` |
+| Sync state | `%USERPROFILE%\.claude-sync\state.json` |
+
+The tilde shorthand (`~`) in config values is automatically expanded to
+`%USERPROFILE%` by the binary.
+
+### Shell integration on Windows
+
+The bash/zsh shell-hook snippet in [Shell Integration](#shell-integration)
+does not apply directly to PowerShell or cmd.exe. Equivalent one-liners for
+**PowerShell** profiles (`$PROFILE`):
+
+```powershell
+# Auto-pull on shell start (add to $PROFILE)
+if (Get-Command claude-sync -ErrorAction SilentlyContinue) {
+    Start-Job { claude-sync pull -q } | Out-Null
+}
+
+# Auto-push when a script exits (add at the end of $PROFILE or use a wrapper)
+Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { claude-sync push -q }
+```
+
+If you use **Git Bash** or **WSL 2**, the standard bash snippet works without
+modification.
+
+### Security note on Windows
+
+On Unix the key file and config are protected with `0600` permissions (owner
+read/write only). On Windows the same restriction is enforced via a DACL
+that grants full access only to the current user's SID, removing inherited
+permissions from the parent directory.
+
+### Known limitations
+
+- **Session paths are absolute.** Claude Code keys sessions to the absolute
+  project path on disk (e.g. `C:\Users\alice\code\myapp`). A session is only
+  resumable on another device if the project lives at exactly the same path.
+  Use the `path_map` config option to map equivalent roots across machines
+  with different usernames or layouts.
+- **`claude-sync update` replaces the binary in-place.** On Windows, a running
+  `.exe` cannot be overwritten while open. The update command renames the old
+  binary to a `.old` file first; restart the terminal after updating.
 
 ## Development
 

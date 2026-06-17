@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
 )
 
 // MCPServers maps server names to their raw JSON configuration.
@@ -122,8 +122,9 @@ func NormalizeMCPPaths(data []byte, homeDir string) []byte {
 	if homeDir == "" {
 		return data
 	}
-	// Ensure no trailing slash for consistent replacement
-	homeDir = strings.TrimRight(homeDir, "/")
+	// Normalize to forward slashes so the replacement matches paths in the
+	// JSON, which uses "/" on all platforms including Windows.
+	homeDir = filepath.ToSlash(filepath.Clean(homeDir))
 	return bytes.ReplaceAll(data, []byte(homeDir), []byte("${HOME}"))
 }
 
@@ -133,7 +134,8 @@ func ResolveMCPPaths(data []byte, homeDir string) []byte {
 	if homeDir == "" {
 		return data
 	}
-	homeDir = strings.TrimRight(homeDir, "/")
+	// Normalize to forward slashes to match what NormalizeMCPPaths stored.
+	homeDir = filepath.ToSlash(filepath.Clean(homeDir))
 	return bytes.ReplaceAll(data, []byte("${HOME}"), []byte(homeDir))
 }
 

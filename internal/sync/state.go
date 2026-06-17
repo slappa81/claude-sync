@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tawanorg/claude-sync/internal/config"
+	"github.com/tawanorg/claude-sync/internal/util"
 )
 
 type FileState struct {
@@ -98,7 +99,7 @@ func (s *SyncState) Save() error {
 		return fmt.Errorf("failed to serialize state: %w", err)
 	}
 
-	if err := os.WriteFile(statePath, data, 0600); err != nil {
+	if err := util.SecureWriteFile(statePath, data); err != nil {
 		return fmt.Errorf("failed to write state: %w", err)
 	}
 
